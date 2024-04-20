@@ -42,7 +42,7 @@ hashike apply my-manifest.yml
 ## 開発
 
 ```sh
-git clone https://github.com/renjaku/hashike-py.git hashike && cd $_
+git clone https://github.com/renjaku/hashike-py.git hashike-py && cd $_
 pip install -e .[dev]
 ```
 
