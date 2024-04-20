@@ -2,19 +2,13 @@
 
 ![Supported Python versions](https://img.shields.io/badge/python-%3E%3D3.9-%2334D058.svg)
 
-Hashike は、複数のコンテナを起動、更新、管理します
-
-## 概要
-
-Hashike は、例えば AWS Fargate などのコンテナ向けサーバーレスであったり
-AWS Lambda のような (所謂 FaaS) が使えない環境において
-K8s を構築するのは過剰である、そんな状況下での利用を想定しています。
+Hashike runs, updates, and manages multiple containers
 
 ![Image](image.jpg)
 
-## クイックスタート
+## Quickstart
 
-インストール & 起動:
+Install & apply:
 
 ```sh
 pip install -U "hashike @ git+https://github.com/renjaku/hashike-py.git"
@@ -33,34 +27,34 @@ spec:
       value: test
     ports:
       - containerPort: 80
-        hostPort: 8000  # 省略した場合 containerPort で公開される
+        hostPort: 8000  # if omitted, it will be published in containerPort
         protocol: tcp
 EOF
 hashike apply my-manifest.yml
 ```
 
-## 開発
+## Development
 
 ```sh
 git clone https://github.com/renjaku/hashike-py.git hashike && cd $_
 pip install -e .[dev]
 ```
 
-もしこのエラーが出た場合:
+If the following errors occur:
 
 ```txt
 ERROR: File "setup.py" not found. Directory cannot be installed in editable mode: /path/to/repo
 (A "pyproject.toml" file was found, but editable mode currently requires a setup.py based build.)
 ```
 
-pip をアップグレードして、再試行してください:
+upgrade pip and retry:
 
 ```sh
 pip install --upgrade pip
 pip install -e .[dev]
 ```
 
-Lint を実行:
+Linting:
 
 ```sh
 flake8 hashike/ && isort $_ && mypy $_
