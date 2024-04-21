@@ -27,7 +27,7 @@ metadata:
 spec:
   containers:
   - name: web
-    image: nginx:latest
+    image: nginx:alpine-slim
     env:
     - name: MY_ENV
       value: test
@@ -35,8 +35,20 @@ spec:
       - containerPort: 80
         hostPort: 8000  # 省略した場合 containerPort で公開される
         protocol: tcp
+  - name: store
+    image: redis:alpine
+    ports:
+      - containerPort: 6379
 EOF
 hashike apply my-manifest.yml
+```
+
+同じネットワークに接続された複数のコンテナが起動します:
+
+```sh
+$ docker container ls --filter label=hashike --format "{{.ID}} {{.Names}} {{.Ports}} {{.Networks}}"
+0123456789ab web 0.0.0.0:8000->80/tcp hashike
+0123456789ac store 0.0.0.0:6379->6379/tcp hashike
 ```
 
 ## 開発
