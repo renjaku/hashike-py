@@ -6,6 +6,10 @@ Hashike runs, updates, and manages multiple containers
 
 ![Image](image.jpg)
 
+## Overview
+
+Hashike is designed for situations where serverless container services like AWS Fargate or function-as-a-service (FaaS) platforms like AWS Lambda are not available, and where setting up Kubernetes would be considered overkill.
+
 ## Quickstart
 
 Install & apply:
