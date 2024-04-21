@@ -55,7 +55,7 @@ $ docker container ls --filter label=hashike --format "{{.ID}} {{.Names}} {{.Por
 
 Hashike では AWS S3 のようなオブジェクトストレージにアップロードした Docker イメージアーカイブから、コンテナを起動することができます。
 
-`docker save` 作成したアーカイブを S3 に配置:
+`docker save` 作成したアーカイブを S3 にアップロード:
 
 ```sh
 docker save app:latest | gzip | \
