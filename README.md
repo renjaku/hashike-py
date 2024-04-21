@@ -32,13 +32,13 @@ spec:
     - name: MY_ENV
       value: test
     ports:
-      - containerPort: 80
-        hostPort: 8000  # 省略した場合 containerPort で公開される
-        protocol: tcp
+    - containerPort: 80
+      hostPort: 8000  # 省略した場合 containerPort で公開される
+      protocol: tcp
   - name: store
     image: redis:alpine
     ports:
-      - containerPort: 6379
+    - containerPort: 6379
 EOF
 hashike apply my-manifest.yml
 ```
@@ -51,9 +51,51 @@ $ docker container ls --filter label=hashike --format "{{.ID}} {{.Names}} {{.Por
 0123456789ac store 0.0.0.0:6379->6379/tcp hashike
 ```
 
-## オブジェクトストレージ + Docker イメージアーカイブ
+## 外部にあるマニフェストファイルをロードする
 
-Hashike では AWS S3 のようなオブジェクトストレージにアップロードした Docker イメージアーカイブから、コンテナを起動することができます。
+Amazon S3 準拠のオブジェクトストレージにあるマニフェストファイルを指定できます:
+
+```sh
+hashike apply s3://my-bucket/my-manifest.yml
+```
+
+これを利用して、定期的にコンテナを更新するサービスを作成できます。
+
+```sh
+# systemd サービスを作成
+cat << EOF > /etc/systemd/system/update-containers.service
+[Unit]
+Description=Update Containers
+
+[Service]
+ExecStart=`which hashike` apply s3://my-bucket/my-manifest.yml
+Type=oneshot
+User=root
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# systemd タイマーを登録し、有効化
+cat << EOF > /etc/systemd/system/update-containers.timer
+[Unit]
+Description=Update Containers
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=1min
+Unit=update-containers.service
+
+[Install]
+WantedBy=timers.target
+EOF
+systemctl daemon-reload
+systemctl enable --now update-containers.timer
+```
+
+## Docker イメージアーカイブ + Amazon S3 準拠のオブジェクトストレージ
+
+Amazon S3 準拠のオブジェクトストレージにアップロードした Docker イメージアーカイブから、コンテナを起動できます。
 
 `docker save` 作成したアーカイブを S3 にアップロード:
 
@@ -75,7 +117,7 @@ spec:
   - name: app
     image: docker-archive+s3://my-bucket/docker-archives/misc.images.tar.gz/app:latest
     ports:
-      - containerPort: 8000
+    - containerPort: 8000
 ```
 
 ## 開発

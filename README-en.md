@@ -26,13 +26,13 @@ spec:
     - name: MY_ENV
       value: test
     ports:
-      - containerPort: 80
-        hostPort: 8000  # if omitted, it will be published in containerPort
-        protocol: tcp
+    - containerPort: 80
+      hostPort: 8000  # if omitted, it will be published in containerPort
+      protocol: tcp
   - name: store
     image: redis:alpine
     ports:
-      - containerPort: 6379
+    - containerPort: 6379
 EOF
 hashike apply my-manifest.yml
 ```
@@ -45,18 +45,60 @@ $ docker container ls --filter label=hashike --format "{{.ID}} {{.Names}} {{.Por
 0123456789ac store 0.0.0.0:6379->6379/tcp hashike
 ```
 
-## Object Storage + Docker Image Archive
+## Loading a Manifest File from an External Source
 
-Hashike allows you to launch containers from Docker image archives uploaded to object storage such as AWS S3.
+You can specify a manifest file located in an Amazon S3-compliant object storage:
 
-Upload the `docker save` archive to S3:
+```sh
+hashike apply s3://my-bucket/my-manifest.yml
+```
+
+Using this, you can create a service that periodically updates containers:
+
+```sh
+# Create a systemd service
+cat << EOF > /etc/systemd/system/update-containers.service
+[Unit]
+Description=Update Containers
+
+[Service]
+ExecStart=`which hashike` apply s3://my-bucket/my-manifest.yml
+Type=oneshot
+User=root
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Register and enable a systemd timer
+cat << EOF > /etc/systemd/system/update-containers.timer
+[Unit]
+Description=Update Containers
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=1min
+Unit=update-containers.service
+
+[Install]
+WantedBy=timers.target
+EOF
+systemctl daemon-reload
+systemctl enable --now update-containers.timer
+```
+
+## Docker Image Archive + Amazon S3 Compliant Object Storage
+
+You can launch containers from a Docker image archive uploaded to Amazon S3 compliant object storage.
+
+Upload the archive created by `docker save` to S3:
 
 ```sh
 docker save app:latest | gzip | \
   aws s3 cp --content-encoding gzip - s3://my-bucket/docker-archives/misc.images.tar.gz
 ```
 
-`docker-archive+s3` scheme to specify the image:
+Use the `docker-archive+s3` scheme to specify the image:
 
 ```yml
 apiVersion: v1
@@ -69,7 +111,7 @@ spec:
   - name: app
     image: docker-archive+s3://my-bucket/docker-archives/misc.images.tar.gz/app:latest
     ports:
-      - containerPort: 8000
+    - containerPort: 8000
 ```
 
 ## Development
