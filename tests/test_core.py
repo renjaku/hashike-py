@@ -25,9 +25,9 @@ def test_apply(driver: Driver):
     manifest_file = URL.create('/dummy-path')
 
     patch_dl_docker_arc = \
-      mock.patch('hashike.pullers.download_docker_archive_from_s3')
+        mock.patch('hashike.pullers.download_docker_archive_from_s3')
     patch_get_images = \
-      mock.patch('hashike.pullers.get_images_from_docker_archive')
+        mock.patch('hashike.pullers.get_images_from_docker_archive')
 
     with cleaning(), \
          mock.patch('hashike.core.open_url') as open_url, \
@@ -92,7 +92,7 @@ spec:
   containers:
   - name: hashike-test
     image: docker-archive+s3://my-bucket/docker-archives/misc.images.tar.gz/nginx:alpine-slim
-""".lstrip()
+""".lstrip()  # noqa: E501
         open_url.return_value = StringIO(manifest)
         dl_docker_arc.return_value = None
         get_images.return_value = [driver.pull('nginx:alpine-slim')]
