@@ -5,7 +5,7 @@ from functools import cache
 from pathlib import Path
 from typing import Optional
 
-from .drivers import Driver, Image
+from .drivers import Driver, EnvVar, Image
 from .utils import URL, open_url, tmp_dir
 
 Puller = Callable[[URL, Driver], Image]
@@ -83,12 +83,16 @@ def get_images_from_docker_archive(download_path: Path) -> list[Image]:
                 raise ValueError(f"{item['Config']} was not found")
 
             details = json.load(buff)
-            entrypoint = details['config'].get('Entrypoint')
-            command = details['config'].get('Cmd')
+            environment = tuple(sorted(
+                EnvVar(*env.split('=', 1))
+                for env in details['config'].get('Env') or []
+            ))
+            entrypoint = tuple(details['config'].get('Entrypoint') or [])
+            command = tuple(details['config'].get('Cmd') or [])
 
-            r.append(Image(image_id, tuple(refs),
-                           tuple(entrypoint) if entrypoint else (),
-                           tuple(command) if command else ()))
+            r.append(Image(id=image_id, references=tuple(refs),
+                           environment=environment, entrypoint=entrypoint,
+                           command=command))
 
     return r
 

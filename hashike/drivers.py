@@ -2,10 +2,10 @@ import json
 import subprocess
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import IO, Any, Literal, NamedTuple, Optional, Type, TypeVar, Union
 
-import docker
+import docker.client
 
 
 class EnvVar(NamedTuple):
@@ -110,21 +110,23 @@ restart_policy_bimap = {
 
 
 @driver('docker')
+@dataclass
 class DockerDriver(Driver):
-    client = docker.from_env()
+    client: docker.client.DockerClient = field(init=False)
+
+    def __post_init__(self):
+        self.client = docker.from_env()
 
     def _create_image(self, image: docker.models.images.Image):
         environment = tuple(sorted(
             EnvVar(*env.split('=', 1))
             for env in image.attrs['Config'].get('Env') or []
         ))
-        entrypoint = image.attrs['Config'].get('Entrypoint')
-        command = image.attrs['Config'].get('Cmd')
-        return Image(id=image.id,
-                     references=tuple(image.attrs['RepoTags']),
-                     environment=environment,
-                     entrypoint=tuple(entrypoint) if entrypoint else (),
-                     command=tuple(command) if command else ())
+        entrypoint = tuple(image.attrs['Config'].get('Entrypoint') or [])
+        command = tuple(image.attrs['Config'].get('Cmd') or [])
+        return Image(id=image.id, references=tuple(image.attrs['RepoTags']),
+                     environment=environment, entrypoint=entrypoint,
+                     command=command)
 
     def get_images(self) -> list[Image]:
         return list(map(self._create_image, self.client.images.list()))
@@ -239,6 +241,7 @@ def run_command(
 
 
 @driver('docker-cli')
+@dataclass
 class DockerCLIDriver(Driver):
     def _get_images(self, id_or_ref: Optional[str] = None):
         cmd = 'docker image ls --no-trunc --format "{{.ID}}"'
@@ -253,16 +256,15 @@ class DockerCLIDriver(Driver):
 
         for detail in details:
             id = detail['Id']
-            refs = detail['RepoTags']
+            refs = tuple(detail['RepoTags'])
             environment = tuple(sorted(
                 EnvVar(*env.split('=', 1))
                 for env in detail['Config'].get('Env') or []
             ))
-            entrypoint = detail['Config'].get('Entrypoint')
-            command = detail['Config'].get('Cmd')
-            yield Image(id, tuple(refs), environment,
-                        tuple(entrypoint) if entrypoint else (),
-                        tuple(command) if command else ())
+            entrypoint = tuple(detail['Config'].get('Entrypoint') or [])
+            command = tuple(detail['Config'].get('Cmd') or [])
+            yield Image(id=id, references=refs, environment=environment,
+                        entrypoint=entrypoint, command=command)
 
     def get_images(self) -> list[Image]:
         return list(self._get_images())
