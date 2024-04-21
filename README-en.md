@@ -45,6 +45,33 @@ $ docker container ls --filter label=hashike --format "{{.ID}} {{.Names}} {{.Por
 0123456789ac store 0.0.0.0:6379->6379/tcp hashike
 ```
 
+## Object Storage + Docker Image Archive
+
+Hashike allows you to launch containers from Docker image archives uploaded to object storage such as AWS S3.
+
+Upload the `docker save` archive to S3:
+
+```sh
+docker save app:latest | gzip | \
+  aws s3 cp --content-encoding gzip - s3://my-bucket/docker-archives/misc.images.tar.gz
+```
+
+`docker-archive+s3` scheme to specify the image:
+
+```yml
+apiVersion: v1
+kind: Hashike
+metadata:
+  namespace: my-project
+  name: my-service
+spec:
+  containers:
+  - name: app
+    image: docker-archive+s3://my-bucket/docker-archives/misc.images.tar.gz/app:latest
+    ports:
+      - containerPort: 8000
+```
+
 ## Development
 
 ```sh

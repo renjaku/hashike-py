@@ -51,6 +51,33 @@ $ docker container ls --filter label=hashike --format "{{.ID}} {{.Names}} {{.Por
 0123456789ac store 0.0.0.0:6379->6379/tcp hashike
 ```
 
+## オブジェクトストレージ + Docker イメージアーカイブ
+
+Hashike では AWS S3 のようなオブジェクトストレージにアップロードした Docker イメージアーカイブから、コンテナを起動することができます。
+
+`docker save` 作成したアーカイブを S3 に配置:
+
+```sh
+docker save app:latest | gzip | \
+  aws s3 cp --content-encoding gzip - s3://my-bucket/docker-archives/misc.images.tar.gz
+```
+
+`docker-archive+s3` スキームを使用してイメージを指定します:
+
+```yml
+apiVersion: v1
+kind: Hashike
+metadata:
+  namespace: my-project
+  name: my-service
+spec:
+  containers:
+  - name: app
+    image: docker-archive+s3://my-bucket/docker-archives/misc.images.tar.gz/app:latest
+    ports:
+      - containerPort: 8000
+```
+
 ## 開発
 
 ```sh
