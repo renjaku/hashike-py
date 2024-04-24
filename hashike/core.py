@@ -5,7 +5,8 @@ from typing import Iterable, TypeVar
 import yaml
 
 from .drivers import (Container, Driver, EnvVar, Image,
-                      NetworkAlreadyExistsError, Port)
+                      NetworkAlreadyExistsError, Port, Volume,
+                      VolumeNotFoundError)
 from .pullers import get_puller
 from .utils import URL, open_url, package_name, parse_image_url
 
@@ -67,6 +68,19 @@ def apply(ctx: Context) -> ApplyResult:
 
         ctx.networks.append(default_network)
 
+    # ボリュームがあれば作成
+    volumes: dict[str, Volume] = {}
+    for volume in manifest['spec'].get('volumes', []):
+        if 'emptyDir' in volume:
+            try:
+                v = ctx.driver.get_volume(volume['name'])
+            except VolumeNotFoundError:
+                v = ctx.driver.create_volume(volume['name'])
+            volumes[volume['name']] = v
+        elif 'hostPath' in volume:
+            volumes[volume['name']] = Volume(type='bind',
+                                             source=volume['hostPath']['path'])
+
     # 既存のコンテナを全て取得
     existing_container_list = ctx.driver.get_all_managed_containers()
 
@@ -101,6 +115,13 @@ def apply(ctx: Context) -> ApplyResult:
 
         networks = sorted(ctx.networks)
 
+        mounts = []
+        for mount in next_container.get('volumeMounts', []):
+            volume = volumes[mount['name']]
+            mounts.append(Volume(type=volume.type, source=volume.source,
+                                 target=mount['mountPath']))
+        mounts = sorted(mounts)
+
         next_container_list.append(Container(name=container_name,
                                              image_id=image.id,
                                              entrypoint=tuple(command),
@@ -108,7 +129,8 @@ def apply(ctx: Context) -> ApplyResult:
                                              environment=tuple(environment),
                                              ports=tuple(ports),
                                              restart_policy=restart_policy,
-                                             networks=tuple(networks)))
+                                             networks=tuple(networks),
+                                             mounts=tuple(mounts)))
 
     logger.debug(f'既存のコンテナ: {existing_container_list}')
     logger.debug(f'次回のコンテナ: {next_container_list}')

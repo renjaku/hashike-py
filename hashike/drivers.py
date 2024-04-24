@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import IO, Any, Literal, NamedTuple, Optional, Type, TypeVar, Union
 
 import docker.client
+import docker.types
 
 
 class EnvVar(NamedTuple):
@@ -21,12 +22,26 @@ class Image(NamedTuple):
     command: tuple[str, ...] = ()
 
 
+class NetworkAlreadyExistsError(Exception):
+    ...
+
+
+class VolumeNotFoundError(Exception):
+    ...
+
+
 # https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#containerport-v1-core
 class Port(NamedTuple):
     container_port: int
     host_ip: Optional[str]
     host_port: int
     protocol: str = 'tcp'
+
+
+class Volume(NamedTuple):
+    type: Literal['bind', 'volume']
+    source: str
+    target: Optional[str] = None
 
 
 class Container(NamedTuple):
@@ -38,10 +53,7 @@ class Container(NamedTuple):
     ports: tuple[Port, ...] = ()
     restart_policy: Literal['Always', 'OnFailure'] = 'Always'
     networks: tuple[str, ...] = ()
-
-
-class NetworkAlreadyExistsError(Exception):
-    ...
+    mounts: tuple[Volume, ...] = ()
 
 
 Self = TypeVar('Self', bound='Driver')
@@ -68,6 +80,14 @@ class Driver(ABC):
 
     @abstractmethod
     def create_network(self: Self, network: str) -> None:
+        ...
+
+    @abstractmethod
+    def get_volume(self: Self, volume: str) -> Volume:
+        ...
+
+    @abstractmethod
+    def create_volume(self: Self, volume: str) -> Volume:
         ...
 
     @abstractmethod
@@ -145,6 +165,18 @@ class DockerDriver(Driver):
 
         self.client.networks.create(network, driver='bridge')
 
+    def get_volume(self, volume: str) -> Volume:
+        try:
+            v = self.client.volumes.get(volume)
+        except docker.errors.NotFound as e:
+            raise VolumeNotFoundError from e
+
+        return Volume(type='volume', source=v.name)
+
+    def create_volume(self, volume: str):
+        v = self.client.volumes.create(volume, labels=dict(hashike=None))
+        return Volume(type='volume', source=v.name)
+
     def get_all_managed_containers(self) -> list[Container]:
         containers = self.client.containers.list(all=True,
                                                  filters=dict(label='hashike'))
@@ -172,8 +204,8 @@ class DockerDriver(Driver):
             ports = sorted(ports)
 
             environment = tuple(sorted(
-                EnvVar(*env.split('=', 1))
-                for env in container.attrs['Config'].get('Env') or []
+                EnvVar(*x.split('=', 1))
+                for x in container.attrs['Config'].get('Env') or []
             ))
 
             restart_policy = (
@@ -185,6 +217,12 @@ class DockerDriver(Driver):
                 container.attrs['NetworkSettings'].get('Networks') or {}
             ).keys()))
 
+            mounts = tuple(sorted(
+                Volume(type=x['Type'], source=x.get('Name', x['Source']),
+                       target=x['Destination'])
+                for x in container.attrs['Mounts']
+            ))
+
             results.append(Container(name=container.name,
                                      image_id=container.image.id,
                                      entrypoint=tuple(entrypoint),
@@ -192,7 +230,8 @@ class DockerDriver(Driver):
                                      environment=environment,
                                      ports=tuple(ports),
                                      restart_policy=restart_policy,
-                                     networks=networks))
+                                     networks=networks,
+                                     mounts=mounts))
 
         return results
 
@@ -211,6 +250,11 @@ class DockerDriver(Driver):
             Name=restart_policy_bimap[container.restart_policy]
         )
 
+        mounts = [
+            docker.types.Mount(type=x.type, source=x.source, target=x.target)
+            for x in container.mounts
+        ]
+
         raw_container = self.client.containers.run(
             container.image_id,
             name=container.name,
@@ -222,6 +266,7 @@ class DockerDriver(Driver):
                    for x in container.ports},
             entrypoint=list(container.entrypoint),
             command=list(container.command),
+            mounts=mounts,
             **run_opts
         )
 
@@ -281,6 +326,12 @@ class DockerCLIDriver(Driver):
             run_command('docker network create --driver bridge ' + network)
         except subprocess.CalledProcessError as e:
             raise NetworkAlreadyExistsError from e  # ネットワーク重複エラーとみなす
+
+    def get_volume(self, volume: str) -> Volume:
+        raise NotImplementedError  # FIXME
+
+    def create_volume(self, volume: str) -> Volume:
+        raise NotImplementedError  # FIXME
 
     def get_all_managed_containers(self) -> list[Container]:
         cmd = ('docker container ls --all --no-trunc --filter "label=hashike" '
