@@ -118,6 +118,76 @@ spec:
     - containerPort: 8000
 ```
 
+## Volume Mounting
+
+Two types of volume mounts are available: `emptyDir` for ephemeral storage and `hostPath` for binding directories from the host.
+
+Mounting `emptyDir` volumes:
+
+```yml
+apiVersion: v1
+kind: Hashike
+metadata:
+  namespace: my-project
+  name: rest-api
+spec:
+  containers:
+  - name: web
+    image: nginx:alpine-slim
+    ports:
+    - containerPort: 80
+    volumeMounts:
+    - name: nginx-templates
+      mountPath: /etc/nginx/templates
+  - name: store
+    image: redis:alpine
+    ports:
+    - containerPort: 6379
+    volumeMounts:
+    - name: redis-data
+      mountPath: /data
+  volumes:
+  - name: nginx-templates
+    emptyDir: {}
+  - name: redis-data
+    emptyDir: {}
+```
+
+Mounting `hostPath` volumes:
+
+```yml
+apiVersion: v1
+kind: Hashike
+metadata:
+  namespace: my-project
+  name: rest-api
+spec:
+  containers:
+  - name: web
+    image: nginx:alpine-slim
+    ports:
+    - containerPort: 80
+    volumeMounts:
+    - name: nginx-templates
+      mountPath: /etc/nginx/templates
+  - name: store
+    image: redis:alpine
+    ports:
+    - containerPort: 6379
+    volumeMounts:
+    - name: redis-data
+      mountPath: /data
+  volumes:
+  - name: nginx-templates
+    hostPath:
+      path: /srv/web/nginx-templates
+      type: Directory
+  - name: redis-data
+    hostPath:
+      path: /srv/store/data
+      type: Directory
+```
+
 ## Development
 
 ```sh

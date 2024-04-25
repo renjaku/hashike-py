@@ -122,7 +122,9 @@ spec:
 
 ## ボリュームマウント
 
-ボリュームマウント:
+通常のボリュームマウント `emptyDir` とホストへのバインドマウント `hostPath` の二種類が利用できます。
+
+`emptyDir` ボリュームをマウント:
 
 ```yml
 apiVersion: v1
@@ -153,7 +155,7 @@ spec:
     emptyDir: {}
 ```
 
-ホストへのバインドマウント:
+`hostPath` ボリュームをマウント:
 
 ```yml
 apiVersion: v1
