@@ -6,7 +6,6 @@ from unittest import mock
 from hashike.core import Context, apply
 from hashike.drivers import Driver
 from hashike.drivers import _map as driver_map
-from hashike.utils import URL
 
 
 def test_apply(driver: Driver):
@@ -22,15 +21,12 @@ def test_apply(driver: Driver):
         finally:
             remove_all_managed_containers()
 
-    manifest_file = URL.create('/dummy-path')
-
     patch_dl_docker_arc = \
         mock.patch('hashike.pullers.download_docker_archive_from_s3')
     patch_get_images = \
         mock.patch('hashike.pullers.get_images_from_docker_archive')
 
     with cleaning(), \
-         mock.patch('hashike.core.open_url') as open_url, \
          patch_dl_docker_arc as dl_docker_arc, \
          patch_get_images as get_images:
         # マニフェストからコンテナ群を起動
@@ -45,14 +41,13 @@ spec:
   - name: hashike-test
     image: nginx:alpine-slim
 """.lstrip()
-        open_url.return_value = StringIO(manifest)
-        ctx = Context(driver=driver, file=manifest_file, networks=[])
+        ctx = Context(driver=driver, file=StringIO(manifest), networks=[])
         result = apply(ctx)
         assert not result.removed_containers, result
         assert len(result.created_containers) == 1, result
 
         # 再度同じマニフェストからコンテナ群を更新
-        open_url.return_value = StringIO(manifest)
+        ctx.file.seek(0)
         result = apply(ctx)
         assert not result.removed_containers, result
         assert not result.created_containers, result
@@ -72,7 +67,7 @@ spec:
     - name: MY_ENV
       value: test
 """.lstrip()
-        open_url.return_value = StringIO(manifest)
+        ctx.file = StringIO(manifest)
         result = apply(ctx)
         assert len(result.removed_containers) == 1, result
         assert len(result.created_containers) == 1, result
@@ -93,7 +88,7 @@ spec:
   - name: hashike-test
     image: docker-archive+s3://my-bucket/docker-archives/misc.images.tar.gz/nginx:alpine-slim
 """.lstrip()  # noqa: E501
-        open_url.return_value = StringIO(manifest)
+        ctx.file = StringIO(manifest)
         dl_docker_arc.return_value = None
         get_images.return_value = [driver.pull('nginx:alpine-slim')]
         result = apply(ctx)

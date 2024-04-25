@@ -51,6 +51,12 @@ $ docker container ls --filter label=hashike --format "{{.ID}} {{.Names}} {{.Por
 0123456789ac store 0.0.0.0:6379->6379/tcp hashike
 ```
 
+マニフェストファイルは、標準入力から取り込むこともできます:
+
+```sh
+hashike apply - < my-manifest.yml
+```
+
 ## 外部にあるマニフェストファイルをロードする
 
 Amazon S3 準拠のオブジェクトストレージにあるマニフェストファイルを指定できます:

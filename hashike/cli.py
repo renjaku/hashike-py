@@ -1,6 +1,8 @@
 import argparse
 import importlib
+import io
 import logging.config
+import sys
 import traceback
 from pathlib import Path
 from types import ModuleType
@@ -63,6 +65,13 @@ def parse_url(s: str) -> URL:
         raise argparse.ArgumentTypeError('invalid URL')
 
 
+def parse_file(s: str):
+    if s == '-':
+        return io.TextIOWrapper(sys.stdin.buffer, encoding='utf8')
+
+    return parse_url(s)
+
+
 def parse_log_config(s: str) -> dict[str, Any]:
     url = parse_url(s)
 
@@ -87,7 +96,7 @@ def get_local_helps() -> dict[str, str]:
 """
         r['--network'] = f"""
 コンテナが接続する既存のネットワーク。オプション繰り返しによる複数指定可。
-未指定の場合、デフォルトの {repr(default_network)} を作成し、接続する
+未指定の場合、デフォルトの "{default_network}" を作成し、接続する
 """
         r['--log-config'] = """
 ロギング設定。logging.dictConfig() で読み込むため JSON と YAML のみ対応
@@ -97,7 +106,7 @@ def get_local_helps() -> dict[str, str]:
 もし、カスタムドライバを使用する場合 --driver より先に指定する必要がある
 """
         r['file'] = """
-K8s Pod マニフェストに似たコンテナ定義ファイル
+K8s Pod マニフェストに似たコンテナ定義ファイル。標準入力から取り込むなら "-" を指定する
 """
         r = {k: v.replace('\n', '') for k, v in r.items()}
     else:
@@ -107,7 +116,9 @@ K8s Pod マニフェストに似たコンテナ定義ファイル
                              'yaml)')
         r['--import-module'] = ('pre-import modules (if a custom driver is '
                                 'used, it must be before --driver)')
-        r['file'] = 'Container definition file like K8s manifest'
+        r['file'] = ('container definition file like K8s manifest. '
+                     '(if reading from standard input, '
+                     'specify "-" as the input source)')
 
     return r
 
@@ -130,7 +141,7 @@ def main() -> None:
     subparser.add_argument('--import-module', type=parse_import_module,
                            action='append', dest='import_modules',
                            metavar='MODULE', help=helps['--import-module'])
-    subparser.add_argument('file', type=parse_url, help=helps['file'])
+    subparser.add_argument('file', type=parse_file, help=helps['file'])
     subparser.set_defaults(action=apply)
 
     args = parser.parse_args()
@@ -139,6 +150,12 @@ def main() -> None:
 
     logger.debug(args)
 
-    ctx = Context(driver=args.driver, file=args.file,
-                  networks=args.networks or [])
-    args.action(ctx)
+    networks = args.networks or []
+
+    if isinstance(args.file, URL):
+        with open_url(args.file, encoding='utf8') as f:
+            ctx = Context(driver=args.driver, file=f, networks=networks)
+            args.action(ctx)
+    else:
+        ctx = Context(driver=args.driver, file=args.file, networks=networks)
+        args.action(ctx)

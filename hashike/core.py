@@ -1,6 +1,6 @@
 import logging.config
 from dataclasses import dataclass
-from typing import Iterable, TypeVar
+from typing import IO, Iterable, TypeVar
 
 import yaml
 
@@ -8,7 +8,7 @@ from .drivers import (Container, Driver, EnvVar, Image,
                       NetworkAlreadyExistsError, Port, Volume,
                       VolumeNotFoundError)
 from .pullers import get_puller
-from .utils import URL, open_url, package_name, parse_image_url
+from .utils import package_name, parse_image_url
 
 logger = logging.getLogger(package_name)
 
@@ -20,7 +20,7 @@ Self = TypeVar('Self', bound='Context')
 @dataclass
 class Context:
     driver: Driver
-    file: URL
+    file: IO[str]
     networks: list[str]
 
 
@@ -43,8 +43,7 @@ def apply(ctx: Context) -> ApplyResult:
         ...  # impl of install() is optional
 
     # マニフェストを読み込み、次の起動コンテナ情報を得る
-    with open_url(ctx.file, encoding='utf8') as f:
-        manifest = yaml.safe_load(f)
+    manifest = yaml.safe_load(ctx.file)
 
     # コンテナ名とイメージの辞書
     next_container_images: dict[str, Image] = {}
