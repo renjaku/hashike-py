@@ -328,10 +328,16 @@ class DockerCLIDriver(Driver):
             raise NetworkAlreadyExistsError from e  # ネットワーク重複エラーとみなす
 
     def get_volume(self, volume: str) -> Volume:
-        raise NotImplementedError  # FIXME
+        try:
+            proc = run_command('docker volume inspect ' + volume)
+        except subprocess.CalledProcessError as e:
+            raise VolumeNotFoundError from e  # 見つからないエラーとみなす
+
+        return Volume(type='volume', source=json.loads(proc.stdout)[0]['Name'])
 
     def create_volume(self, volume: str) -> Volume:
-        raise NotImplementedError  # FIXME
+        run_command('docker volume create --label=hashike ' + volume)
+        return self.get_volume(volume)
 
     def get_all_managed_containers(self) -> list[Container]:
         cmd = ('docker container ls --all --no-trunc --filter "label=hashike" '
@@ -384,13 +390,20 @@ class DockerCLIDriver(Driver):
                 (detail['NetworkSettings'].get('Networks') or {}).keys()
             ))
 
+            mounts = tuple(sorted(
+                Volume(type=x['Type'], source=x.get('Name', x['Source']),
+                       target=x['Destination'])
+                for x in detail['Mounts']
+            ))
+
             results.append(Container(name=name, image_id=image_id,
                                      entrypoint=tuple(entrypoint),
                                      command=tuple(command),
                                      environment=environment,
                                      ports=tuple(ports),
                                      restart_policy=restart_policy,
-                                     networks=networks))
+                                     networks=networks,
+                                     mounts=mounts))
 
         return results
 
@@ -412,6 +425,11 @@ class DockerCLIDriver(Driver):
         if container.networks:
             network_opt = '--network ' + container.networks[0]
 
+        mount_ops = (
+            f'--mount type={x.type},source="{x.source}",target={x.target}'
+            for x in container.mounts
+        )
+
         run_command(f"""
 docker container run
     --name {container.name}
@@ -422,6 +440,7 @@ docker container run
     {' '.join(env_opts)}
     --entrypoint {' '.join(entrypoint)}
     {' '.join(publish_opts)}
+    {' '.join(mount_ops)}
     {container.image_id}
     {' '.join(command)}
 """.replace('\n', ' ').strip())
