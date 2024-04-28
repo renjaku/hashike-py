@@ -3,9 +3,9 @@ from contextlib import contextmanager
 from io import StringIO
 from unittest import mock
 
-from hashike.core import Context, apply
+from hashike import Context, apply
 from hashike.drivers import Driver
-from hashike.drivers import _map as driver_map
+from hashike.drivers.base import _map as driver_map
 
 
 def test_apply(driver: Driver):
@@ -21,10 +21,10 @@ def test_apply(driver: Driver):
         finally:
             remove_all_managed_containers()
 
-    patch_dl_docker_arc = \
-        mock.patch('hashike.pullers.download_docker_archive_from_s3')
-    patch_get_images = \
-        mock.patch('hashike.pullers.get_images_from_docker_archive')
+    patch_dl_docker_arc = mock.patch('hashike.pullers.docker_archive.'
+                                     'download_docker_archive_from_s3')
+    patch_get_images = mock.patch('hashike.pullers.docker_archive.'
+                                  'get_images_from_docker_archive')
 
     with cleaning(), \
          patch_dl_docker_arc as dl_docker_arc, \

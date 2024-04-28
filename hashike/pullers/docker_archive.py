@@ -1,50 +1,11 @@
 import json
 import tarfile
-from collections.abc import Callable
 from functools import cache
 from pathlib import Path
-from typing import Optional
 
-from .drivers import Driver, EnvVar, Image
-from .utils import URL, open_url, tmp_dir
-
-Puller = Callable[[URL, Driver], Image]
-
-_map: dict[Optional[str], Puller] = {}
-
-
-class PullerNotFoundError(Exception):
-    ...
-
-
-def get_puller(url_scheme: Optional[str]) -> Puller:
-    try:
-        return _map[url_scheme]
-    except KeyError as e:
-        raise PullerNotFoundError from e
-
-
-def puller(*, url_scheme: Optional[str]):
-    def wrap(fn: Puller):
-        _map[url_scheme] = fn
-        return _map[url_scheme]
-
-    return wrap
-
-
-@puller(url_scheme=None)
-def pull_from_registry(url: URL, driver: Driver) -> Image:
-    if not url.path:
-        raise ValueError
-
-    image = '/'.join(str(x)
-                     for x in [url.hostname, url.path.relative_to('/')]
-                     if x)
-
-    if ':' not in image:
-        image += ':latest'
-
-    return driver.pull(image)
+from ..drivers import Driver, EnvVar, Image
+from ..utils import URL, open_url, tmp_dir
+from .base import puller
 
 
 @cache
