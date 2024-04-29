@@ -1,15 +1,27 @@
 import json
 import subprocess
+import time
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import IO, Optional
 
 import docker.client
+import docker.models
 import docker.types
 
-from .base import (Container, Driver, EnvVar, Image, NetworkAlreadyExistsError,
-                   Port, Volume, VolumeNotFoundError, driver,
-                   restart_policy_bimap, run_command)
+from ..utils import package_name
+from .base import (Container, Driver, EnvVar, Image, InitContainerFailedError,
+                   NetworkAlreadyExistsError, Port, Volume,
+                   VolumeNotFoundError, driver, run_command)
+
+label_key = package_name
+
+restart_policy_bimap = {
+    'Always': 'always',
+    'always': 'Always',
+    'OnFailure': 'on-failure',
+    'on-failure': 'OnFailure'
+}
 
 
 @driver('docker')
@@ -57,12 +69,13 @@ class DockerDriver(Driver):
         return Volume(type='volume', source=v.name)
 
     def create_volume(self, volume: str):
-        v = self.client.volumes.create(volume, labels=dict(hashike=None))
+        v = self.client.volumes.create(volume, labels={label_key: None})
         return Volume(type='volume', source=v.name)
 
-    def get_all_managed_containers(self) -> list[Container]:
+    def _get_containers(self, init: bool = False) -> list[Container]:
+        label = f"{label_key}={'init' if init else ''}"
         containers = self.client.containers.list(all=True,
-                                                 filters=dict(label='hashike'))
+                                                 filters=dict(label=label))
 
         results = []
 
@@ -118,12 +131,20 @@ class DockerDriver(Driver):
 
         return results
 
+    def get_init_containers(self) -> list[Container]:
+        return self._get_containers(init=True)
+
+    def get_containers(self) -> list[Container]:
+        return self._get_containers()
+
     def remove_containers(self, names: Iterable[str]) -> None:
         for name in names:
             container = self.client.containers.get(name)
             container.remove(force=True)
 
-    def run_container(self, container: Container) -> None:
+    def _run_container(
+        self, container: Container, init: bool = False
+    ) -> docker.models.containers.Container:
         run_opts = {}
 
         if container.networks:
@@ -141,7 +162,7 @@ class DockerDriver(Driver):
         raw_container = self.client.containers.run(
             container.image_id,
             name=container.name,
-            labels=['hashike'],
+            labels={label_key: 'init'} if init else [label_key],
             restart_policy=restart_policy,
             detach=True,
             environment=[f'{k}={v}' for k, v in container.environment],
@@ -157,6 +178,32 @@ class DockerDriver(Driver):
             networks = self.client.networks.list(names=container.networks[1:])
             for network in networks:
                 network.connect(raw_container)
+
+        return raw_container
+
+    def run_init_container(self, container: Container) -> None:
+        raw_container = self._run_container(container, init=True)
+
+        if container.restart_policy == 'Always':
+            ready = False
+            n_healthy = 0
+            for _ in range(60):
+                raw_container.reload()  # 状態を更新
+                if raw_container.status == 'running':
+                    n_healthy += 1
+                    if n_healthy == 4:
+                        ready = True
+                        break
+                time.sleep(1)
+            if not ready:
+                raise InitContainerFailedError
+        else:
+            response = raw_container.wait()  # 終了を待機
+            if response['StatusCode'] != 0:
+                raise InitContainerFailedError
+
+    def run_container(self, container: Container) -> None:
+        self._run_container(container)
 
 
 @driver('docker-cli')
@@ -210,12 +257,14 @@ class DockerCLIDriver(Driver):
         return Volume(type='volume', source=json.loads(proc.stdout)[0]['Name'])
 
     def create_volume(self, volume: str) -> Volume:
-        run_command('docker volume create --label=hashike ' + volume)
+        run_command(f'docker volume create --label={label_key} {volume}')
         return self.get_volume(volume)
 
-    def get_all_managed_containers(self) -> list[Container]:
-        cmd = ('docker container ls --all --no-trunc --filter "label=hashike" '
-               '--format "{{.ID}}')
+    def _get_containers(self, init: bool = False) -> list[Container]:
+        label = f"{label_key}={'init' if init else ''}"
+        cmd = ('docker container ls --all --no-trunc '
+               f'--filter "label={label}" '
+               '--format "{{.ID}}"')
 
         ids = [x
                for x in run_command(cmd).stdout.strip().splitlines()
@@ -281,10 +330,16 @@ class DockerCLIDriver(Driver):
 
         return results
 
+    def get_init_containers(self) -> list[Container]:
+        return self._get_containers(init=True)
+
+    def get_containers(self) -> list[Container]:
+        return self._get_containers()
+
     def remove_containers(self, names: Iterable[str]) -> None:
         run_command(f"docker container rm -f {' '.join(names)}")
 
-    def run_container(self, container: Container) -> None:
+    def _run_container(self, container: Container, init: bool = False) -> None:
         env_opts = (f'--env {k}={v}' for k, v in container.environment)
         entrypoint = (f'"{x}"' if ' ' in x else x
                       for x in container.entrypoint)
@@ -307,7 +362,7 @@ class DockerCLIDriver(Driver):
         run_command(f"""
 docker container run
     --name {container.name}
-    --label hashike
+    --label {f"{label_key}={'init' if init else ''}"}
     --restart {restart_policy}
     {network_opt}
     --detach
@@ -321,3 +376,31 @@ docker container run
 
         for network in container.networks[1:]:
             run_command(f'docker network connect {network} {container.name}')
+
+    def run_init_container(self, container: Container) -> None:
+        self._run_container(container)
+
+        if container.restart_policy == 'Always':
+            ready = False
+            n_healthy = 0
+            cmd = ('docker container inspect --format "{{json .State}}" '
+                   f'{container.name}')
+            for _ in range(60):
+                proc = run_command(cmd)
+                details = json.loads(proc.stdout)
+                if details['Status'] == 'running':
+                    n_healthy += 1
+                    if n_healthy == 4:
+                        ready = True
+                        break
+                time.sleep(1)
+            if not ready:
+                raise InitContainerFailedError
+        else:
+            cmd = 'docker container wait ' + container.name
+            proc = run_command(cmd)  # 終了を待機
+            if int(proc.stdout) != 0:
+                raise InitContainerFailedError
+
+    def run_container(self, container: Container) -> None:
+        self._run_container(container)

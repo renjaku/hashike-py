@@ -26,6 +26,8 @@ class Context:
 
 @dataclass
 class ApplyResult:
+    removed_init_containers: list[Container]
+    created_init_containers: list[Container]
     removed_containers: list[Container]
     created_containers: list[Container]
 
@@ -45,10 +47,13 @@ def apply(ctx: Context) -> ApplyResult:
     # マニフェストを読み込み、次の起動コンテナ情報を得る
     manifest = yaml.safe_load(ctx.file)
 
+    init_containers = manifest['spec'].get('initContainers', [])
+    containers = manifest['spec']['containers']
+
     # コンテナ名とイメージの辞書
     next_container_images: dict[str, Image] = {}
 
-    for container in manifest['spec']['containers']:
+    for container in init_containers + containers:
         logger.debug(f"{container['name']} @ {container['image']}")
         image_url = parse_image_url(container['image'])
 
@@ -80,20 +85,16 @@ def apply(ctx: Context) -> ApplyResult:
             volumes[volume['name']] = Volume(type='bind',
                                              source=volume['hostPath']['path'])
 
-    # 既存のコンテナを全て取得
-    existing_container_list = ctx.driver.get_all_managed_containers()
+    base_restart_policy = manifest['spec'].get('restartPolicy', 'Always')
 
-    # 次のコンテナを整理する
-    next_container_list: list[Container] = []
-
-    for next_container in manifest['spec']['containers']:
-        container_name = next_container['name']
+    def parse_container(container, init=False):
+        container_name = container['name']
         image = next_container_images[container_name]
-        command = next_container.get('command', image.entrypoint)
-        args = next_container.get('args', image.command)
+        command = container.get('command', image.entrypoint)
+        args = container.get('args', image.command)
 
         ports = []
-        for port in next_container.get('ports', []):
+        for port in container.get('ports', []):
             port_kwargs = dict(
                 container_port=port['containerPort'],
                 host_ip=port.get('hostIp'),
@@ -107,49 +108,114 @@ def apply(ctx: Context) -> ApplyResult:
 
         environment = _merge_envs(image.environment,
                                   [EnvVar(env['name'], str(env['value']))
-                                   for env in next_container.get('env', [])])
+                                   for env in container.get('env', [])])
         environment = sorted(environment)
 
-        restart_policy = next_container.get('restartPolicy', 'Always')
+        if init and base_restart_policy == 'Always':
+            # https://kubernetes.io/ja/docs/concepts/workloads/pods/init-containers/#detailed-behavior
+            default_restart_policy = 'OnFailure'
+        else:
+            default_restart_policy = base_restart_policy
+        # 本来 container.restartPolicy は、初期化コンテナのみ設定可能だが、非初期化コンテナも許容する
+        # https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.30/#container-v1-core
+        restart_policy = container.get('restartPolicy', default_restart_policy)
 
         networks = sorted(ctx.networks)
 
         mounts = []
-        for mount in next_container.get('volumeMounts', []):
+        for mount in container.get('volumeMounts', []):
             volume = volumes[mount['name']]
             mounts.append(Volume(type=volume.type, source=volume.source,
                                  target=mount['mountPath']))
         mounts = sorted(mounts)
 
-        next_container_list.append(Container(name=container_name,
-                                             image_id=image.id,
-                                             entrypoint=tuple(command),
-                                             command=tuple(args),
-                                             environment=tuple(environment),
-                                             ports=tuple(ports),
-                                             restart_policy=restart_policy,
-                                             networks=tuple(networks),
-                                             mounts=tuple(mounts)))
+        return Container(name=container_name, image_id=image.id,
+                         entrypoint=tuple(command), command=tuple(args),
+                         environment=tuple(environment), ports=tuple(ports),
+                         restart_policy=restart_policy,
+                         networks=tuple(networks),
+                         mounts=tuple(mounts))
+
+    # 既存の初期化コンテナを全て取得
+    existing_init_container_list = ctx.driver.get_init_containers()
+
+    # 次の初期化コンテナを整理する
+    next_init_container_list = [parse_container(x, init=True)
+                                for x in init_containers]
+
+    logger.debug(f'既存の初期化コンテナ: {existing_init_container_list}')
+    logger.debug(f'次回の初期化コンテナ: {next_init_container_list}')
+
+    # 既存のコンテナを全て取得
+    existing_container_list = ctx.driver.get_containers()
+
+    # 次のコンテナを整理する
+    next_container_list = [parse_container(x) for x in containers]
 
     logger.debug(f'既存のコンテナ: {existing_container_list}')
     logger.debug(f'次回のコンテナ: {next_container_list}')
 
-    existing_containers = set(existing_container_list)
-    next_containers = set(next_container_list)
+    # 削除するコンテナと起動するコンテナを決定
+    existing_init_containers = set(existing_init_container_list)
+    next_init_containers = set(next_init_container_list)
 
-    # 不要になったコンテナを削除
-    unnecessary_containers = existing_containers - next_containers
-    logger.debug(f'削除するコンテナ: {unnecessary_containers}')
-    if unnecessary_containers:
-        ctx.driver.remove_containers(x.name for x in unnecessary_containers)
+    if existing_init_containers == next_init_containers:
+        # 初期化コンテナに変更がなければ、定義差分から決定
+        existing_containers = set(existing_container_list)
+        next_containers = set(next_container_list)
+        unnecessary_containers = existing_containers - next_containers
+        unnecessary_container_list = [x for x in existing_container_list
+                                      if x in unnecessary_containers]
+        new_containers = next_containers - existing_containers
+        new_container_list = [x for x in next_container_list
+                              if x in new_containers]
+
+        # 初期化コンテナ自体は変更がないので、削除も起動もしない
+        unnecessary_init_container_list = []
+        new_init_container_list = []
+
+    else:
+        # 初期化コンテナに変更があれば、全ての非初期化コンテナを削除し起動する
+        unnecessary_container_list = existing_container_list
+        new_container_list = next_container_list
+
+        # 不要な初期化コンテナを決定
+        unnecessary_init_containers = \
+            existing_init_containers - next_init_containers
+        unnecessary_init_container_list = [
+            x for x in existing_init_container_list
+            if x in unnecessary_init_containers
+        ]
+
+        # 起動する初期化コンテナを決定
+        new_init_containers = next_init_containers - existing_init_containers
+        new_init_container_list = [x for x in next_init_container_list
+                                   if x in new_init_containers]
+
+    # 不要な初期化コンテナを削除
+    logger.debug(f'削除する初期化コンテナ: {unnecessary_init_container_list}')
+    if unnecessary_init_container_list:
+        ctx.driver.remove_containers(
+            x.name for x in unnecessary_init_container_list
+        )
+
+    # 新しい初期化コンテナを起動
+    logger.debug(f'起動する初期化コンテナ: {new_init_container_list}')
+    for container in new_init_container_list:
+        ctx.driver.run_init_container(container)
+
+    # 不要なコンテナを削除
+    logger.debug(f'削除するコンテナ: {unnecessary_container_list}')
+    if unnecessary_container_list:
+        ctx.driver.remove_containers(x.name
+                                     for x in unnecessary_container_list)
 
     # 新しいコンテナを起動
-    new_containers = next_containers - existing_containers
-    logger.debug(f'起動するコンテナ: {new_containers}')
-    for container in new_containers:
+    logger.debug(f'起動するコンテナ: {new_container_list}')
+    for container in new_container_list:
         ctx.driver.run_container(container)
 
-    return ApplyResult(removed_containers=[x for x in existing_container_list
-                                           if x in unnecessary_containers],
-                       created_containers=[x for x in next_container_list
-                                           if x in new_containers])
+    return ApplyResult(removed_init_containers=unnecessary_init_container_list,
+                       created_init_containers=new_init_container_list,
+                       removed_containers=unnecessary_container_list,
+                       created_containers=new_container_list)

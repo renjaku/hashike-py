@@ -18,7 +18,7 @@ class Image(NamedTuple):
     command: tuple[str, ...] = ()
 
 
-# https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#containerport-v1-core
+# https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.30/#containerport-v1-core
 class Port(NamedTuple):
     container_port: int
     host_ip: Optional[str]
@@ -30,14 +30,6 @@ class Volume(NamedTuple):
     type: Literal['bind', 'volume']
     source: str
     target: Optional[str] = None
-
-
-restart_policy_bimap = {
-    'Always': 'always',
-    'always': 'Always',
-    'OnFailure': 'on-failure',
-    'on-failure': 'OnFailure'
-}
 
 
 class Container(NamedTuple):
@@ -57,6 +49,10 @@ class NetworkAlreadyExistsError(Exception):
 
 
 class VolumeNotFoundError(Exception):
+    ...
+
+
+class InitContainerFailedError(Exception):
     ...
 
 
@@ -95,7 +91,11 @@ class Driver(ABC):
         ...
 
     @abstractmethod
-    def get_all_managed_containers(self: Self) -> list[Container]:
+    def get_init_containers(self: Self) -> list[Container]:
+        ...
+
+    @abstractmethod
+    def get_containers(self: Self) -> list[Container]:
         ...
 
     @abstractmethod
@@ -103,7 +103,11 @@ class Driver(ABC):
         ...
 
     @abstractmethod
-    def run_container(self, container: Container):
+    def run_init_container(self: Self, container: Container) -> None:
+        ...
+
+    @abstractmethod
+    def run_container(self: Self, container: Container):
         ...
 
     def __str__(self: Self):
