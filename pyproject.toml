@@ -34,5 +34,8 @@ dev = [
 [project.scripts]
 hashike = "hashike:main"
 
-[tool.setuptools.dynamic]
-version = { attr = "hashike.__version__" }
+[tool.setuptools.dynamic.version]
+attr = "hashike.__version__"
+
+[tool.setuptools.package-dir]
+hashike = "hashike"
