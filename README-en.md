@@ -16,7 +16,7 @@ Install & apply:
 
 ```sh
 pip install -U "hashike @ git+https://github.com/renjaku/hashike-py.git"
-cat << EOF > my-manifest.yml
+cat <<EOF > my-manifest.yml
 apiVersion: v1
 kind: Hashike
 metadata:
@@ -67,7 +67,7 @@ Using this, you can create a service that periodically updates containers:
 
 ```sh
 # Create a systemd service
-cat << EOF > /etc/systemd/system/update-containers.service
+cat <<EOF > /etc/systemd/system/update-containers.service
 [Unit]
 Description=Update Containers
 
@@ -81,7 +81,7 @@ WantedBy=multi-user.target
 EOF
 
 # Register and enable a systemd timer
-cat << EOF > /etc/systemd/system/update-containers.timer
+cat <<EOF > /etc/systemd/system/update-containers.timer
 [Unit]
 Description=Update Containers
 

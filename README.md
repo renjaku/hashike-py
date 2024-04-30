@@ -12,13 +12,21 @@ K8s を構築するのは過剰である、そんな状況下での利用を想�
 
 ![Image](image.jpg)
 
+## インストール
+
+```sh
+pip install "hashike @ git+https://github.com/renjaku/hashike-py.git"
+```
+
+もしエラーが発生した場合、[トラブルシューティング](#トラブルシューティング)を確認して下さい。
+
 ## クイックスタート
 
 インストール & 起動:
 
 ```sh
-pip install -U "hashike @ git+https://github.com/renjaku/hashike-py.git"
-cat << EOF > my-manifest.yml
+pip install "hashike @ git+https://github.com/renjaku/hashike-py.git"
+cat <<EOF > my-manifest.yml
 apiVersion: v1
 kind: Hashike
 metadata:
@@ -69,7 +77,7 @@ hashike apply s3://my-bucket/my-manifest.yml
 
 ```sh
 # systemd サービスを作成
-cat << EOF > /etc/systemd/system/update-containers.service
+cat <<EOF > /etc/systemd/system/update-containers.service
 [Unit]
 Description=Update Containers
 
@@ -83,7 +91,7 @@ WantedBy=multi-user.target
 EOF
 
 # systemd タイマーを登録し、有効化
-cat << EOF > /etc/systemd/system/update-containers.timer
+cat <<EOF > /etc/systemd/system/update-containers.timer
 [Unit]
 Description=Update Containers
 
@@ -196,6 +204,37 @@ spec:
       type: Directory
 ```
 
+## トラブルシューティング
+
+### docker.errors.DockerException
+
+```txt
+docker.errors.DockerException: Error while fetching server API version: ('Connection aborted.', FileNotFoundError(2, 'No such file or directory'))
+```
+
+もしこのエラーが出た場合 Docker がインストールされていることを確認して下さい:
+
+```sh
+docker --version
+```
+
+### `pip install` 時のエラー
+
+```sh
+ERROR: After October 2020 you may experience errors when installing or updating packages. This is because pip will change the way that it resolves dependency conflicts.
+
+We recommend you use --use-feature=2020-resolver to test your packages with the new resolver before it becomes the default.
+
+botocore 1.34.94 requires urllib3<1.27,>=1.25.4; python_version < "3.10", but you'll have urllib3 2.2.1 which is incompatible.
+```
+
+もしこのエラーが出た場合 pip をアップグレードして、再試行して下さい:
+
+```sh
+pip install --upgrade pip
+pip install "hashike @ git+https://github.com/renjaku/hashike-py.git"
+```
+
 ## 開発
 
 ```sh
@@ -210,7 +249,7 @@ ERROR: File "setup.py" not found. Directory cannot be installed in editable mode
 (A "pyproject.toml" file was found, but editable mode currently requires a setup.py based build.)
 ```
 
-pip をアップグレードして、再試行してください:
+pip をアップグレードして、再試行して下さい:
 
 ```sh
 pip install --upgrade pip
