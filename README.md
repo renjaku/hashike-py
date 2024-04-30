@@ -23,10 +23,9 @@ pip install "hashike @ git+https://github.com/renjaku/hashike-py.git"
 
 ## クイックスタート
 
-インストール & 起動:
+マニフェストファイルを作成して、適用します:
 
 ```sh
-pip install "hashike @ git+https://github.com/renjaku/hashike-py.git"
 cat <<EOF > my-manifest.yml
 apiVersion: v1
 kind: Hashike
