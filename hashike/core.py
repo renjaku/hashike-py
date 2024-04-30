@@ -190,9 +190,7 @@ def apply(driver: Driver, file: IO[str], networks: list[str]) -> ApplyResult:
     # 不要な初期化コンテナを削除
     logger.debug(f'削除する初期化コンテナ: {unnecessary_init_containers}')
     if unnecessary_init_containers:
-        driver.remove_containers(
-            x.name for x in unnecessary_init_containers
-        )
+        driver.remove_containers(x.name for x in unnecessary_init_containers)
 
     # 新しい初期化コンテナを起動
     logger.debug(f'起動する初期化コンテナ: {new_init_containers}')

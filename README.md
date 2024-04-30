@@ -220,6 +220,6 @@ pip install -e .[dev]
 Lint を実行:
 
 ```sh
-flake8 hashike/ && isort $_ && mypy $_
-flake8 tests/ && isort $_ && mypy $_
+isort $_ && flake8 hashike/ && mypy $_
+isort $_ && flake8 tests/ && mypy $_
 ```
