@@ -212,7 +212,7 @@ spec:
 docker.errors.DockerException: Error while fetching server API version: ('Connection aborted.', FileNotFoundError(2, 'No such file or directory'))
 ```
 
-もしこのエラーが出た場合 Docker がインストールされていることを確認して下さい:
+もしこのエラーが出た場合、Docker がインストールされていることを確認して下さい:
 
 ```sh
 docker --version
@@ -228,7 +228,7 @@ We recommend you use --use-feature=2020-resolver to test your packages with the 
 botocore 1.34.94 requires urllib3<1.27,>=1.25.4; python_version < "3.10", but you'll have urllib3 2.2.1 which is incompatible.
 ```
 
-もしこのエラーが出た場合 pip をアップグレードして、再試行して下さい:
+もしこのエラーが出た場合、pip をアップグレードして、再試行して下さい:
 
 ```sh
 pip install --upgrade pip
