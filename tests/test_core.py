@@ -3,14 +3,15 @@ from contextlib import contextmanager
 from io import StringIO
 from unittest import mock
 
-from hashike import Context, apply
+from hashike import apply
 from hashike.drivers import Driver
 from hashike.drivers.base import _map as driver_map
 
 
 def test_apply(driver: Driver):
     def remove_all_managed_containers():
-        target_names = [x.name for x in driver.get_all_managed_containers()]
+        targets = driver.get_init_containers() + driver.get_containers()
+        target_names = [x.name for x in targets]
         if target_names:
             driver.remove_containers(target_names)
 
@@ -41,14 +42,12 @@ spec:
   - name: hashike-test
     image: nginx:alpine-slim
 """.lstrip()
-        ctx = Context(driver=driver, file=StringIO(manifest), networks=[])
-        result = apply(ctx)
+        result = apply(driver, file=StringIO(manifest), networks=[])
         assert not result.removed_containers, result
         assert len(result.created_containers) == 1, result
 
         # 再度同じマニフェストからコンテナ群を更新
-        ctx.file.seek(0)
-        result = apply(ctx)
+        result = apply(driver, file=StringIO(manifest), networks=[])
         assert not result.removed_containers, result
         assert not result.created_containers, result
 
@@ -67,8 +66,7 @@ spec:
     - name: MY_ENV
       value: test
 """.lstrip()
-        ctx.file = StringIO(manifest)
-        result = apply(ctx)
+        result = apply(driver, file=StringIO(manifest), networks=[])
         assert len(result.removed_containers) == 1, result
         assert len(result.created_containers) == 1, result
         assert dict(result.removed_containers[0].environment) \
@@ -88,10 +86,9 @@ spec:
   - name: hashike-test
     image: docker-archive+s3://my-bucket/docker-archives/misc.images.tar.gz/nginx:alpine-slim
 """.lstrip()  # noqa: E501
-        ctx.file = StringIO(manifest)
         dl_docker_arc.return_value = None
         get_images.return_value = [driver.pull('nginx:alpine-slim')]
-        result = apply(ctx)
+        result = apply(driver, file=StringIO(manifest), networks=[])
         assert len(result.removed_containers) == 1, result
         assert len(result.created_containers) == 1, result
 

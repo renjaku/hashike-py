@@ -10,7 +10,7 @@ from typing import Any
 
 import yaml
 
-from .core import Context, apply, default_network
+from .core import apply, default_network
 from .drivers import Driver, get_driver
 from .utils import URL, get_language, open_url, package_name
 
@@ -154,8 +154,6 @@ def main() -> None:
 
     if isinstance(args.file, URL):
         with open_url(args.file, encoding='utf8') as f:
-            ctx = Context(driver=args.driver, file=f, networks=networks)
-            args.action(ctx)
+            args.action(args.driver, f, networks)
     else:
-        ctx = Context(driver=args.driver, file=args.file, networks=networks)
-        args.action(ctx)
+        args.action(args.driver, args.file, networks)

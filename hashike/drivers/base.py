@@ -63,9 +63,6 @@ Self = TypeVar('Self', bound='Driver')
 class Driver(ABC):
     key: str
 
-    def install(self: Self) -> None:
-        raise NotImplementedError
-
     @abstractmethod
     def get_images(self: Self) -> list[Image]:
         ...

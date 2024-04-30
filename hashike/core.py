@@ -1,6 +1,6 @@
 import logging.config
 from dataclasses import dataclass
-from typing import IO, Iterable, TypeVar
+from typing import IO, Any, Iterable, TypeVar
 
 import yaml
 
@@ -13,15 +13,6 @@ from .utils import package_name, parse_image_url
 logger = logging.getLogger(package_name)
 
 default_network = package_name
-
-Self = TypeVar('Self', bound='Context')
-
-
-@dataclass
-class Context:
-    driver: Driver
-    file: IO[str]
-    networks: list[str]
 
 
 @dataclass
@@ -36,60 +27,17 @@ def _merge_envs(*envs: Iterable[EnvVar]) -> list[EnvVar]:
     return [x for x in set(y for x in envs for y in x)]
 
 
-def apply(ctx: Context) -> ApplyResult:
-    logger.debug(f'Context: {ctx}')
+@dataclass
+class _ParseContainer:
+    images: dict[str, Image]
+    volumes: dict[str, Volume]
+    networks: list[str]
+    restart_policy: str
 
-    try:
-        ctx.driver.install()
-    except NotImplementedError:
-        ...  # impl of install() is optional
-
-    # マニフェストを読み込み、次の起動コンテナ情報を得る
-    manifest = yaml.safe_load(ctx.file)
-
-    init_containers = manifest['spec'].get('initContainers', [])
-    containers = manifest['spec']['containers']
-
-    # コンテナ名とイメージの辞書
-    next_container_images: dict[str, Image] = {}
-
-    for container in init_containers + containers:
-        logger.debug(f"{container['name']} @ {container['image']}")
-        image_url = parse_image_url(container['image'])
-
-        # イメージを pull
-        image = get_puller(image_url.scheme)(image_url, ctx.driver)
-
-        # コンテナ名とイメージのペアを保存
-        next_container_images[container['name']] = image
-
-    if not ctx.networks:
-        try:
-            # デフォルトネットワークを作成
-            ctx.driver.create_network(default_network)
-        except NetworkAlreadyExistsError:
-            ...  # 既に存在するならよし
-
-        ctx.networks.append(default_network)
-
-    # ボリュームがあれば作成
-    volumes: dict[str, Volume] = {}
-    for volume in manifest['spec'].get('volumes', []):
-        if 'emptyDir' in volume:
-            try:
-                v = ctx.driver.get_volume(volume['name'])
-            except VolumeNotFoundError:
-                v = ctx.driver.create_volume(volume['name'])
-            volumes[volume['name']] = v
-        elif 'hostPath' in volume:
-            volumes[volume['name']] = Volume(type='bind',
-                                             source=volume['hostPath']['path'])
-
-    base_restart_policy = manifest['spec'].get('restartPolicy', 'Always')
-
-    def parse_container(container, init=False):
+    def __call__(self, container: dict[str, Any],
+                 init: bool = False) -> Container:
         container_name = container['name']
-        image = next_container_images[container_name]
+        image = self.images[container['image']]
         command = container.get('command', image.entrypoint)
         args = container.get('args', image.command)
 
@@ -111,20 +59,20 @@ def apply(ctx: Context) -> ApplyResult:
                                    for env in container.get('env', [])])
         environment = sorted(environment)
 
-        if init and base_restart_policy == 'Always':
+        if init and self.restart_policy == 'Always':
             # https://kubernetes.io/ja/docs/concepts/workloads/pods/init-containers/#detailed-behavior
             default_restart_policy = 'OnFailure'
         else:
-            default_restart_policy = base_restart_policy
+            default_restart_policy = self.restart_policy
         # 本来 container.restartPolicy は、初期化コンテナのみ設定可能だが、非初期化コンテナも許容する
         # https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.30/#container-v1-core
         restart_policy = container.get('restartPolicy', default_restart_policy)
 
-        networks = sorted(ctx.networks)
+        networks = sorted(self.networks)
 
         mounts = []
         for mount in container.get('volumeMounts', []):
-            volume = volumes[mount['name']]
+            volume = self.volumes[mount['name']]
             mounts.append(Volume(type=volume.type, source=volume.source,
                                  target=mount['mountPath']))
         mounts = sorted(mounts)
@@ -136,86 +84,132 @@ def apply(ctx: Context) -> ApplyResult:
                          networks=tuple(networks),
                          mounts=tuple(mounts))
 
+
+T = TypeVar('T')
+
+
+def _diff(a: list[T], b: list[T]) -> list[T]:
+    diff = set(a) - set(b)
+    return [x for x in a if x in diff]
+
+
+def apply(driver: Driver, file: IO[str], networks: list[str]) -> ApplyResult:
+    logger.debug(f'Driver: {driver}')
+    logger.debug(f'File: {file}')
+    logger.debug(f'Networks: {networks}')
+
+    # マニフェストを読み込み、次の起動コンテナ情報を得る
+    manifest = yaml.safe_load(file)
+
+    init_containers = manifest['spec'].get('initContainers', [])
+    containers = manifest['spec']['containers']
+
+    # イメージの辞書
+    images: dict[str, Image] = {}
+
+    for container in init_containers + containers:
+        logger.debug(f"{container['name']} @ {container['image']}")
+        image_url = parse_image_url(container['image'])
+
+        # イメージを pull
+        image = get_puller(image_url.scheme)(image_url, driver)
+
+        # イメージ名とオブジェクトのペアを保存
+        images[container['image']] = image
+
+    if networks:
+        networks = networks.copy()
+    else:
+        try:
+            # デフォルトネットワークを作成
+            driver.create_network(default_network)
+        except NetworkAlreadyExistsError:
+            ...  # 既に存在するならよし
+        networks = [default_network]
+
+    # ボリュームがあれば作成
+    volumes: dict[str, Volume] = {}
+    for volume in manifest['spec'].get('volumes', []):
+        if 'emptyDir' in volume:
+            try:
+                v = driver.get_volume(volume['name'])
+            except VolumeNotFoundError:
+                v = driver.create_volume(volume['name'])
+            volumes[volume['name']] = v
+        elif 'hostPath' in volume:
+            volumes[volume['name']] = Volume(type='bind',
+                                             source=volume['hostPath']['path'])
+
+    restart_policy = manifest['spec'].get('restartPolicy', 'Always')
+
+    parse_container = _ParseContainer(images, volumes, networks,
+                                      restart_policy)
+
     # 既存の初期化コンテナを全て取得
-    existing_init_container_list = ctx.driver.get_init_containers()
+    existing_init_containers = driver.get_init_containers()
 
     # 次の初期化コンテナを整理する
-    next_init_container_list = [parse_container(x, init=True)
-                                for x in init_containers]
+    next_init_containers = [parse_container(x, init=True)
+                            for x in init_containers]
 
-    logger.debug(f'既存の初期化コンテナ: {existing_init_container_list}')
-    logger.debug(f'次回の初期化コンテナ: {next_init_container_list}')
+    logger.debug(f'既存の初期化コンテナ: {existing_init_containers}')
+    logger.debug(f'次回の初期化コンテナ: {next_init_containers}')
 
     # 既存のコンテナを全て取得
-    existing_container_list = ctx.driver.get_containers()
+    existing_containers = driver.get_containers()
 
     # 次のコンテナを整理する
-    next_container_list = [parse_container(x) for x in containers]
+    next_containers = [parse_container(x) for x in containers]
 
-    logger.debug(f'既存のコンテナ: {existing_container_list}')
-    logger.debug(f'次回のコンテナ: {next_container_list}')
+    logger.debug(f'既存のコンテナ: {existing_containers}')
+    logger.debug(f'次回のコンテナ: {next_containers}')
 
     # 削除するコンテナと起動するコンテナを決定
-    existing_init_containers = set(existing_init_container_list)
-    next_init_containers = set(next_init_container_list)
-
     if existing_init_containers == next_init_containers:
         # 初期化コンテナに変更がなければ、定義差分から決定
-        existing_containers = set(existing_container_list)
-        next_containers = set(next_container_list)
-        unnecessary_containers = existing_containers - next_containers
-        unnecessary_container_list = [x for x in existing_container_list
-                                      if x in unnecessary_containers]
-        new_containers = next_containers - existing_containers
-        new_container_list = [x for x in next_container_list
-                              if x in new_containers]
+        unnecessary_containers = _diff(existing_containers, next_containers)
+        new_containers = _diff(next_containers, existing_containers)
 
         # 初期化コンテナ自体は変更がないので、削除も起動もしない
-        unnecessary_init_container_list = []
-        new_init_container_list = []
+        unnecessary_init_containers = []
+        new_init_containers = []
 
     else:
         # 初期化コンテナに変更があれば、全ての非初期化コンテナを削除し起動する
-        unnecessary_container_list = existing_container_list
-        new_container_list = next_container_list
+        unnecessary_containers = existing_containers
+        new_containers = next_containers
 
         # 不要な初期化コンテナを決定
-        unnecessary_init_containers = \
-            existing_init_containers - next_init_containers
-        unnecessary_init_container_list = [
-            x for x in existing_init_container_list
-            if x in unnecessary_init_containers
-        ]
+        unnecessary_init_containers = _diff(existing_init_containers,
+                                            next_init_containers)
 
         # 起動する初期化コンテナを決定
-        new_init_containers = next_init_containers - existing_init_containers
-        new_init_container_list = [x for x in next_init_container_list
-                                   if x in new_init_containers]
+        new_init_containers = _diff(next_init_containers,
+                                    existing_init_containers)
 
     # 不要な初期化コンテナを削除
-    logger.debug(f'削除する初期化コンテナ: {unnecessary_init_container_list}')
-    if unnecessary_init_container_list:
-        ctx.driver.remove_containers(
-            x.name for x in unnecessary_init_container_list
+    logger.debug(f'削除する初期化コンテナ: {unnecessary_init_containers}')
+    if unnecessary_init_containers:
+        driver.remove_containers(
+            x.name for x in unnecessary_init_containers
         )
 
     # 新しい初期化コンテナを起動
-    logger.debug(f'起動する初期化コンテナ: {new_init_container_list}')
-    for container in new_init_container_list:
-        ctx.driver.run_init_container(container)
+    logger.debug(f'起動する初期化コンテナ: {new_init_containers}')
+    for container in new_init_containers:
+        driver.run_init_container(container)
 
     # 不要なコンテナを削除
-    logger.debug(f'削除するコンテナ: {unnecessary_container_list}')
-    if unnecessary_container_list:
-        ctx.driver.remove_containers(x.name
-                                     for x in unnecessary_container_list)
+    logger.debug(f'削除するコンテナ: {unnecessary_containers}')
+    if unnecessary_containers:
+        driver.remove_containers(x.name for x in unnecessary_containers)
 
     # 新しいコンテナを起動
-    logger.debug(f'起動するコンテナ: {new_container_list}')
-    for container in new_container_list:
-        ctx.driver.run_container(container)
+    logger.debug(f'起動するコンテナ: {new_containers}')
+    for container in new_containers:
+        driver.run_container(container)
 
-    return ApplyResult(removed_init_containers=unnecessary_init_container_list,
-                       created_init_containers=new_init_container_list,
-                       removed_containers=unnecessary_container_list,
-                       created_containers=new_container_list)
+    return ApplyResult(removed_init_containers=unnecessary_init_containers,
+                       created_init_containers=new_init_containers,
+                       removed_containers=unnecessary_containers,
+                       created_containers=new_containers)
