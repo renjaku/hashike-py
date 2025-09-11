@@ -16,7 +16,7 @@ Install & apply:
 
 ```sh
 pip install -U "hashike @ git+https://github.com/renjaku/hashike-py.git"
-cat <<EOF > my-manifest.yml
+cat <<EOF > my-manifest.yaml
 apiVersion: v1
 kind: Hashike
 metadata:
@@ -38,7 +38,7 @@ spec:
     ports:
     - containerPort: 6379
 EOF
-hashike apply my-manifest.yml
+hashike apply my-manifest.yaml
 ```
 
 Multiple containers connected to the same network are started:
@@ -52,7 +52,7 @@ $ docker container ls --filter label=hashike --format "{{.ID}} {{.Names}} {{.Por
 Manifest files can also be read from stdin:
 
 ```sh
-hashike apply - < my-manifest.yml
+hashike apply - < my-manifest.yaml
 ```
 
 ## Loading a Manifest File from an External Source
@@ -60,7 +60,7 @@ hashike apply - < my-manifest.yml
 You can specify a manifest file located in an Amazon S3-compliant object storage:
 
 ```sh
-hashike apply s3://my-bucket/my-manifest.yml
+hashike apply s3://my-bucket/my-manifest.yaml
 ```
 
 Using this, you can create a service that periodically updates containers:
@@ -72,7 +72,7 @@ cat <<EOF > /etc/systemd/system/update-containers.service
 Description=Update Containers
 
 [Service]
-ExecStart=`which hashike` apply s3://my-bucket/my-manifest.yml
+ExecStart=`which hashike` apply s3://my-bucket/my-manifest.yaml
 Type=oneshot
 User=root
 
@@ -110,7 +110,7 @@ docker save app:latest | gzip | \
 
 Use the `docker-archive+s3` scheme to specify the image:
 
-```yml
+```yaml
 apiVersion: v1
 kind: Hashike
 metadata:
@@ -130,7 +130,7 @@ Two types of volume mounts are available: `emptyDir` for ephemeral storage and `
 
 Mounting `emptyDir` volumes:
 
-```yml
+```yaml
 apiVersion: v1
 kind: Hashike
 metadata:
@@ -161,7 +161,7 @@ spec:
 
 Mounting `hostPath` volumes:
 
-```yml
+```yaml
 apiVersion: v1
 kind: Hashike
 metadata:

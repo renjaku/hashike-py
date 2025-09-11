@@ -26,7 +26,7 @@ pip install "hashike @ git+https://github.com/renjaku/hashike-py.git"
 マニフェストファイルを作成して、適用します:
 
 ```sh
-cat <<EOF > my-manifest.yml
+cat <<EOF > my-manifest.yaml
 apiVersion: v1
 kind: Hashike
 metadata:
@@ -48,7 +48,7 @@ spec:
     ports:
     - containerPort: 6379
 EOF
-hashike apply my-manifest.yml
+hashike apply my-manifest.yaml
 ```
 
 同じネットワークに接続された複数のコンテナが起動します:
@@ -62,7 +62,7 @@ $ docker container ls --filter label=hashike --format "{{.ID}} {{.Names}} {{.Por
 マニフェストファイルは、標準入力から取り込むこともできます:
 
 ```sh
-hashike apply - < my-manifest.yml
+hashike apply - < my-manifest.yaml
 ```
 
 ## 外部にあるマニフェストファイルをロードする
@@ -70,7 +70,7 @@ hashike apply - < my-manifest.yml
 Amazon S3 準拠のオブジェクトストレージにあるマニフェストファイルを指定できます:
 
 ```sh
-hashike apply s3://my-bucket/my-manifest.yml
+hashike apply s3://my-bucket/my-manifest.yaml
 ```
 
 これを利用して、定期的にコンテナを更新するサービスを作成できます。
@@ -82,7 +82,7 @@ cat <<EOF > /etc/systemd/system/update-containers.service
 Description=Update Containers
 
 [Service]
-ExecStart=`which hashike` apply s3://my-bucket/my-manifest.yml
+ExecStart=`which hashike` apply s3://my-bucket/my-manifest.yaml
 Type=oneshot
 User=root
 
@@ -140,7 +140,7 @@ spec:
 
 `emptyDir` ボリュームをマウント:
 
-```yml
+```yaml
 apiVersion: v1
 kind: Hashike
 metadata:
@@ -171,7 +171,7 @@ spec:
 
 `hostPath` ボリュームをマウント:
 
-```yml
+```yaml
 apiVersion: v1
 kind: Hashike
 metadata:
