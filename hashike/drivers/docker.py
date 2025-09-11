@@ -3,6 +3,7 @@ import subprocess
 import time
 from collections.abc import Iterable
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import IO, Optional
 
 import docker.client
@@ -154,10 +155,14 @@ class DockerDriver(Driver):
             Name=restart_policy_bimap[container.restart_policy]
         )
 
-        mounts = [
-            docker.types.Mount(type=x.type, source=x.source, target=x.target)
-            for x in container.mounts
-        ]
+        mounts = []
+        for volume in container.mounts:
+            mount = docker.types.Mount(type=volume.type,
+                                       source=volume.source,
+                                       target=volume.target)
+            mounts.append(mount)
+            if volume.type == 'bind':
+                Path(volume.source).mkdir(parents=True, exist_ok=True)
 
         raw_container = self.client.containers.run(
             container.image_id,
