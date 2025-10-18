@@ -35,7 +35,12 @@ def get_images_from_docker_archive(download_path: Path) -> list[Image]:
         manifest = json.load(buff)
 
         for item in manifest:
-            image_id = 'sha256:' + item['Config'].removesuffix('.json')
+            # Docker Image Manifest v2 Schema 1 では .json が接尾辞に付くので除去
+            digest = item['Config'].removesuffix('.json')
+            # Docker Image Manifest v2 Schema 2 (OCI Image Format) 以降、
+            # 付加される接頭辞を除去
+            digest = digest.removeprefix('blobs/sha256/')
+            image_id = 'sha256:' + digest
             refs = item['RepoTags']
 
             buff = f.extractfile(item['Config'])
