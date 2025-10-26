@@ -119,7 +119,7 @@ metadata:
 spec:
   containers:
   - name: app
-    image: docker-archive+s3://my-bucket/docker-archives/misc.images.tar.gz/app:latest
+    image: docker-archive+s3://my-bucket/docker-archives/misc.images.tar.gz#app:latest
     ports:
     - containerPort: 8000
 ```

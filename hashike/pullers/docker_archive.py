@@ -65,13 +65,12 @@ def get_images_from_docker_archive(download_path: Path) -> list[Image]:
 
 @puller(url_scheme='docker-archive+s3')
 def pull_from_docker_archive_on_s3(url: URL, driver: Driver) -> Image:
-    if not (url.scheme and url.path):
+    if not (url.scheme and url.path and url.fragment):
         raise ValueError
 
     src_url_scheme = url.scheme.removeprefix('docker-archive+')
-    src_url_path = url.path.parent
-    src_ref = url.path.name
-    src_url = url.replace(scheme=src_url_scheme, path=src_url_path)
+    src_ref = url.fragment
+    src_url = url.replace(scheme=src_url_scheme, path=url.path)
     download_path = download_docker_archive_from_s3(src_url)
     archive_images = get_images_from_docker_archive(download_path)
 

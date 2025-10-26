@@ -55,6 +55,7 @@ class URL:
     port: Optional[int] = None
     path: Optional[PurePosixPath] = None
     query: Optional[str] = None
+    fragment: Optional[str] = None
 
     @classmethod
     def create(cls: Type[Self],
@@ -82,7 +83,8 @@ class URL:
         return cls(url.scheme or None, username or None, password or None,
                    url.hostname or None, url.port or None,
                    PurePosixPath(path) if path else None,
-                   url.query or None)
+                   url.query or None,
+                   url.fragment or None)
 
     @property
     def host(self: Self):
