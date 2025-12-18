@@ -31,7 +31,7 @@ class DockerDriver(Driver):
     client: docker.client.DockerClient = field(init=False)
 
     def __post_init__(self):
-        self.client = docker.from_env()
+        self.client = docker.from_env(timeout=300)
 
     def _create_image(self, image: docker.models.images.Image):
         environment = tuple(sorted(
